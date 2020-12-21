@@ -1,0 +1,79 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vpc-admission-webhook-svc
+  namespace: kube-system
+  labels:
+    app: vpc-admission-webhook
+spec:
+  ports:
+  - port: 443
+    targetPort: 443
+  selector:
+    app: vpc-admission-webhook
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vpc-admission-webhook-deployment
+  namespace: kube-system
+  labels:
+    app: vpc-admission-webhook
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: vpc-admission-webhook
+  template:
+    metadata:
+      labels:
+        app: vpc-admission-webhook
+    spec:
+      containers:
+        - name: vpc-admission-webhook
+          args:
+            - -tlsCertFile=/etc/webhook/certs/cert.pem
+            - -tlsKeyFile=/etc/webhook/certs/key.pem
+            - -OSLabelSelectorOverride=windows
+            - -alsologtostderr
+            - -v=4
+            - 2>&1
+          image: 602401143452.dkr.ecr.us-east-1.amazonaws.com/eks/vpc-admission-webhook:0.2.3
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /etc/webhook/certs
+              readOnly: true
+      hostNetwork: true
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        beta.kubernetes.io/arch: amd64
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: vpc-admission-webhook-certs
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: vpc-admission-webhook-cfg
+  labels:
+    app: vpc-admission-webhook
+webhooks:
+  - name: vpc-admission-webhook.amazonaws.com
+    clientConfig:
+      service:
+        name: vpc-admission-webhook-svc
+        namespace: kube-system
+        path: "/mutate"
+      caBundle: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUN5RENDQWJDZ0F3SUJBZ0lCQURBTkJna3Foa2lHOXcwQkFRc0ZBREFWTVJNd0VRWURWUVFERXdwcmRXSmwKY201bGRHVnpNQjRYRFRJd01USXlNVEEyTURreE5Gb1hEVE13TVRJeE9UQTJNRGt4TkZvd0ZURVRNQkVHQTFVRQpBeE1LYTNWaVpYSnVaWFJsY3pDQ0FTSXdEUVlKS29aSWh2Y05BUUVCQlFBRGdnRVBBRENDQVFvQ2dnRUJBTnpWCjJ3c2ZoVVhpYTZEWlpwaDlOVHU5T0VNOWpxQXJmWjF6Zmc5c2x4TlNsME1DaUFFUmIwOWlZaXdPY3FjYnFrc1YKd2FxTmVVeDJsZFVjYXRJM1VucjFOdmVZbnp5dlh3TVp2cGJhK25lWTRwVEtnd2RTMVpZQm8xSGozamwvQ0I4SApXb3FaSWNMVlVnd1dqb3lUWmphdEdBMWlMYlpYM2tMajF3UHdteDZGOXJMd2hoV2RGdFVWRnBVbWE1ek1veThBCmo3d1FEQ2VadERWNHZHcG5sNXdtRlh5cTIydnR3Q05vVlo4OUpDN1F0eGJmckFPTy9IZ0JuZGc3MFQrVnNWYkgKOGZVMHJiZ2pjRE5yenhSL2tDWm1LYWVvNy9KMFRWazhOYlhXL3pINzdaVjlGWkVmN1R0R1puOHRRKzhzWTJoKwpKTkkrNExFSmQzSHJyNlNaNUpzQ0F3RUFBYU1qTUNFd0RnWURWUjBQQVFIL0JBUURBZ0trTUE4R0ExVWRFd0VCCi93UUZNQU1CQWY4d0RRWUpLb1pJaHZjTkFRRUxCUUFEZ2dFQkFHNStYVlh2amNURk9UNi9hTzZwekJTZEpPOXoKSkYzUWNpdFlKUlZaNUZDQ1VLRWxaam9SeENoQ3RBbTgxNWl5aWY0TVFOdjBkdmxXNDJFY1pnT0U2a1YremVaZAo1cExucWlzTXduU0JwTldKdXEyaDFLd05ueGtFMjFJbHcwZmc3RllTL3FucWpQTEwvMkdIVDZmQ3pJQ0lHS3AyCjF6THJTUFRrc2paNEVSZUtwU21QZXRBMG5ZQnh4WU1OR3FCUG9JdE83T1NkVEpmL211STVDWFVqUUhwNDdTcVUKUUZkOEtweHNTak1qbzdtNjNwSXF0MHVIeGVldnBiOGlUZlZ1bzBLcHUrbFgwSVhPTTdYRzN1OXZTRFRXU2RNSwpCZEZZVnNPb2FIa0IzQlBNZjgyNVZjUnA5KzVBWUNKa0RUVnpBS3ZESEFhYVYzb1ZYaTBXZ0tYYXVaaz0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+    rules:
+      - operations: [ "CREATE" ]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+    failurePolicy: Ignore
+---
